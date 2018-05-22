@@ -1,0 +1,18 @@
+cxxflags:
+{
+    -std=c++14
+}
+
+sources:
+{
+    combainLocationApi.cpp
+    CombainLocationRequest.cpp
+}
+
+provides:
+{
+    api:
+    {
+        $CURDIR/../ma_combainLocation.api
+    }
+}

@@ -1,0 +1,21 @@
+sandboxed: true
+start: auto
+version: 1.0
+
+executables:
+{
+    combainLocation = ( combain )
+}
+
+processes:
+{
+    run:
+    {
+        ( combainLocation )
+    }
+}
+
+extern:
+{
+    combainLocation.combain.ma_combainLocation
+}

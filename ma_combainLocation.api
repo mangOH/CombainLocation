@@ -1,0 +1,97 @@
+DEFINE WIFI_BSSID_BYTES = 6;
+DEFINE WIFI_SSID_MAX_BYTES = 32;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * An opaque object for a location request.
+ */
+//--------------------------------------------------------------------------------------------------
+REFERENCE LocReqHandle;
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Creates a location request object in the service.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION LocReqHandle CreateLocationRequest();
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Append information about one WiFi access point to the request object
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t AppendWifiAccessPoint
+(
+    LocReqHandle handle IN,             ///< Handle from CreateLocationRequest()
+    uint8 bssid[WIFI_BSSID_BYTES] IN,   ///< BSSID of the WiFi AP.  Must be exactly 6 bytes.
+    uint8 ssid[WIFI_SSID_MAX_BYTES] IN, ///< SSID of the WiFi AP. Not necessarily a string. Do not
+                                        ///< null terminate.
+    int16 signalStrength IN             ///< Signal strength in dB.  E.g. -62.
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Handler that will be called when a response to a request is received from the Combain server.
+ */
+//--------------------------------------------------------------------------------------------------
+HANDLER LocationResponseHandler
+(
+    LocReqHandle handle, ///< Handle of the request
+    bool success         ///< If true, call GetSuccessResponse(), else call GetErrorResponse()
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Submits the location request to the Cobbain server for processing.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t SubmitLocationRequest
+(
+    LocReqHandle handle IN,                  ///< Handle of the request to submit
+    LocationResponseHandler responseHandler  ///< Handler that will be called on completion of the
+                                             ///< request if this function returns LE_OK
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Destroys a previously created request freeing the resources allocated in the service. Note that
+ * the GetSuccessResponse() and GetErrorResponse() functions implicitly destroy the request, so
+ * calling this function is only necessary if the client decides not to submit the request after
+ * creating it or decides not to retrieve the response.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION DestroyLocationRequest
+(
+    LocReqHandle handle IN  ///< Handle of the request to destroy
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Gets the response data from a successfully completed request. Note that the request is implicitly
+ * destroyed by calling this function.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetSuccessResponse
+(
+    LocReqHandle handle IN,
+    double latitude OUT,
+    double longitude OUT,
+    double accuracyInMeters OUT 
+    // TODO: geoname, address fallback?
+);
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Gets the response data from a request which failed to complete. Note that the request is
+ * implicitly destroyed by calling this function.
+ */
+//--------------------------------------------------------------------------------------------------
+FUNCTION le_result_t GetErrorResponse
+(
+    LocReqHandle handle IN,
+    string firstDomain[64] OUT,
+    string firstReason[64] OUT,
+    string firstMessage[128] OUT,
+    uint16 code OUT,
+    string message[128] OUT 
+);
