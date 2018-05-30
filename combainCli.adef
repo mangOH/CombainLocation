@@ -1,0 +1,13 @@
+start: manual
+sandboxed: false
+
+executables:
+{
+    combain = ( combainCli )
+}
+
+bindings:
+{
+    combain.combainCli.ma_combainLocation -> combainLocation.ma_combainLocation
+    combain.combainCli.le_wifiClient -> wifiService.le_wifiClient
+}

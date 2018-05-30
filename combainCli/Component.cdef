@@ -1,0 +1,18 @@
+requires:
+{
+    api:
+    {
+        ${CURDIR}/../ma_combainLocation.api
+        wifi/le_wifiClient.api 
+    }
+}
+
+cflags:
+{
+    "-std=c99"
+}
+
+sources:
+{
+    main.c
+}

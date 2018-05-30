@@ -31,25 +31,38 @@ FUNCTION le_result_t AppendWifiAccessPoint
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Handler that will be called when a response to a request is received from the Combain server.
+ * Result type that is passed to the callback when after submitting a request
  */
 //--------------------------------------------------------------------------------------------------
-HANDLER LocationResponseHandler
+ENUM Result
+{
+    RESULT_SUCCESS,
+    RESULT_ERROR,
+    RESULT_RESPONSE_PARSE_FAILURE,
+    RESULT_COMMUNICATION_FAILURE,
+};
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Handler that will be called when a result of a request is available
+ */
+//--------------------------------------------------------------------------------------------------
+HANDLER LocationResultHandler
 (
     LocReqHandle handle, ///< Handle of the request
-    bool success         ///< If true, call GetSuccessResponse(), else call GetErrorResponse()
+    Result result        ///< What type of result is available
 );
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Submits the location request to the Cobbain server for processing.
+ * Submits the location request to the Combain server for processing.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t SubmitLocationRequest
 (
-    LocReqHandle handle IN,                  ///< Handle of the request to submit
-    LocationResponseHandler responseHandler  ///< Handler that will be called on completion of the
-                                             ///< request if this function returns LE_OK
+    LocReqHandle handle IN,              ///< Handle of the request to submit
+    LocationResultHandler resultHandler  ///< Handler that will be called on completion of the
+                                         ///< request if this function returns LE_OK
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -94,4 +107,10 @@ FUNCTION le_result_t GetErrorResponse
     string firstMessage[128] OUT,
     uint16 code OUT,
     string message[128] OUT 
+);
+
+FUNCTION le_result_t GetParseFailureResult
+(
+    LocReqHandle handle IN,
+    string unparsedResponse[256] OUT
 );

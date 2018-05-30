@@ -1,25 +1,42 @@
 #include "legato.h"
 #include "interfaces.h"
+
 #include <list>
 #include <stdexcept>
 #include <memory>
 #include <algorithm>
-#include "CombainLocationRequest.h"
+#include <jansson.h>
+
+#include "CombainRequestBuilder.h"
+#include "CombainResult.h"
+#include "CombainHttp.h"
+#include "ThreadSafeQueue.h"
 
 
 struct RequestRecord
 {
     ma_combainLocation_LocReqHandleRef_t handle;
     le_msg_SessionRef_t clientSession;
-    CombainLocationRequest request;
+    std::shared_ptr<CombainRequestBuilder> request;
+    ma_combainLocation_LocationResultHandlerFunc_t responseHandler;
+    void *responseHandlerContext;
+    std::shared_ptr<CombainResult> result;
 };
 
 // Just use a list for all of the requests because it's very unlikely that there will be more than
 // one or two active at a time.
 static std::list<RequestRecord> Requests;
 
+ThreadSafeQueue<std::tuple<ma_combainLocation_LocReqHandleRef_t, std::string>> RequestJson;
+ThreadSafeQueue<std::tuple<ma_combainLocation_LocReqHandleRef_t, std::string>> ResponseJson;
+le_event_Id_t ResponseAvailableEvent;
+
 static ma_combainLocation_LocReqHandleRef_t GenerateHandle(void);
-static RequestRecord* GetRequestRecordFromHandle(ma_combainLocation_LocReqHandleRef_t handle);
+static RequestRecord* GetRequestRecordFromHandle(
+    ma_combainLocation_LocReqHandleRef_t handle, bool matchClientSession);
+static bool TryParseAsSuccess(json_t *responseJson, std::shared_ptr<CombainResult>& result);
+static bool TryParseAsError(json_t *responseJson, std::shared_ptr<CombainResult>& result);
+
 
 
 ma_combainLocation_LocReqHandleRef_t ma_combainLocation_CreateLocationRequest
@@ -31,6 +48,7 @@ ma_combainLocation_LocReqHandleRef_t ma_combainLocation_CreateLocationRequest
     auto& r = Requests.back();
     r.handle = GenerateHandle();
     r.clientSession = ma_combainLocation_GetClientSessionRef();
+    r.request.reset(new CombainRequestBuilder());
 
     return r.handle;
 }
@@ -45,10 +63,16 @@ le_result_t ma_combainLocation_AppendWifiAccessPoint
     int16_t signalStrength
 )
 {
-    RequestRecord *requestRecord = GetRequestRecordFromHandle(handle);
+    RequestRecord *requestRecord = GetRequestRecordFromHandle(handle, true);
     if (!requestRecord)
     {
         return LE_BAD_PARAMETER;
+    }
+
+    if (!requestRecord->request)
+    {
+        // Request builder doesn't exist, must have already been submitted
+        return LE_BUSY;
     }
 
     std::unique_ptr<WifiApScanItem> ap;
@@ -60,7 +84,7 @@ le_result_t ma_combainLocation_AppendWifiAccessPoint
         LE_ERROR("Failed to append AP info: %s", e.what());
         return LE_BAD_PARAMETER;
     }
-    requestRecord->request.appendWifiAccessPoint(*ap);
+    requestRecord->request->appendWifiAccessPoint(*ap);
 
     return LE_OK;
 }
@@ -68,15 +92,36 @@ le_result_t ma_combainLocation_AppendWifiAccessPoint
 le_result_t ma_combainLocation_SubmitLocationRequest
 (
     ma_combainLocation_LocReqHandleRef_t handle,
-    ma_combainLocation_LocationResponseHandlerFunc_t responseHandler,
+    ma_combainLocation_LocationResultHandlerFunc_t responseHandler,
     void *context
 )
 {
-    RequestRecord *requestRecord = GetRequestRecordFromHandle(handle);
+    LE_DEBUG("In %s at line %d", __func__, __LINE__ );
+    RequestRecord *requestRecord = GetRequestRecordFromHandle(handle, true);
     if (!requestRecord)
     {
         return LE_BAD_PARAMETER;
     }
+
+    if (!requestRecord->request)
+    {
+        // Request builder doesn't exist, must have already been submitted
+        return LE_BUSY;
+    }
+
+    std::string requestBody = requestRecord->request->generateRequestBody();
+    LE_DEBUG("Submitting request: %s", requestBody.c_str());
+    {
+        FILE* f = fopen("request.txt", "w");
+        LE_ASSERT(f != NULL);
+        fwrite(requestBody.c_str(), 1, requestBody.size(), f);
+        fclose(f);
+    }
+    requestRecord->responseHandler = responseHandler;
+    requestRecord->responseHandlerContext = context;
+    // NULL out the request generator since we're done with it
+    requestRecord->request.reset();
+    RequestJson.enqueue(std::make_tuple(handle, requestBody));
 
     return LE_OK;
 }
@@ -86,46 +131,54 @@ void ma_combainLocation_DestroyLocationRequest
     ma_combainLocation_LocReqHandleRef_t handle
 )
 {
-    RequestRecord *requestRecord = GetRequestRecordFromHandle(handle);
-    if (!requestRecord)
-    {
-        return;
-    }
-
-    // TODO
+    std::remove_if(
+        Requests.begin(),
+        Requests.end(),
+        [handle] (const RequestRecord& rec) {
+            return handle == rec.handle &&
+                rec.clientSession == ma_combainLocation_GetClientSessionRef();
+        });
 }
 
 le_result_t ma_combainLocation_GetSuccessResponse
 (
-    ma_combainLocation_LocReqHandleRef_t  handle,
+    ma_combainLocation_LocReqHandleRef_t handle,
     double *latitude,
     double *longitude,
     double *accuracyInMeters
 )
 {
-    RequestRecord *requestRecord = GetRequestRecordFromHandle(handle);
+    RequestRecord *requestRecord = GetRequestRecordFromHandle(handle, true);
     if (!requestRecord)
     {
         return LE_BAD_PARAMETER;
     }
 
-    const SuccessResponse *r;
-    le_result_t res = requestRecord->request.getSuccessResponse(&r);
-    if (res != LE_OK)
+    auto r = requestRecord->result;
+    if (!r)
     {
         return LE_UNAVAILABLE;
     }
 
-    *latitude = r->latitude;
-    *longitude = r->longitude;
-    *accuracyInMeters = r->accuracyInMeters;
+    if (r->getType() != MA_COMBAINLOCATION_RESULT_SUCCESS)
+    {
+        return LE_UNAVAILABLE;
+    }
+
+    std::shared_ptr<CombainSuccessResponse> sr = std::static_pointer_cast<CombainSuccessResponse>(r);
+
+    *latitude = sr->latitude;
+    *longitude = sr->longitude;
+    *accuracyInMeters = sr->accuracyInMeters;
+
+    ma_combainLocation_DestroyLocationRequest(handle);
 
     return LE_OK;
 }
 
 le_result_t ma_combainLocation_GetErrorResponse
 (
-    ma_combainLocation_LocReqHandleRef_t  handle,
+    ma_combainLocation_LocReqHandleRef_t handle,
     char *firstDomain,
     size_t firstDomainLen,
     char *firstReason,
@@ -137,25 +190,31 @@ le_result_t ma_combainLocation_GetErrorResponse
     size_t messageLen
 )
 {
-    RequestRecord *requestRecord = GetRequestRecordFromHandle(handle);
+    RequestRecord *requestRecord = GetRequestRecordFromHandle(handle, true);
     if (!requestRecord)
     {
         return LE_BAD_PARAMETER;
     }
 
-    const ErrorResponse *r;
-    le_result_t res = requestRecord->request.getErrorResponse(&r);
-    if (res != LE_OK)
+    auto r = requestRecord->result;
+    if (!r)
     {
         return LE_UNAVAILABLE;
     }
 
-    *code = r->code;
-    strncpy(message, r->message.c_str(), messageLen - 1);
+    if (r->getType() != MA_COMBAINLOCATION_RESULT_ERROR)
+    {
+        return LE_UNAVAILABLE;
+    }
+
+    std::shared_ptr<CombainErrorResponse> er = std::static_pointer_cast<CombainErrorResponse>(r);
+
+    *code = er->code;
+    strncpy(message, er->message.c_str(), messageLen - 1);
     message[messageLen - 1] = '\0';
 
-    auto it = r->errors.begin();
-    if (it != r->errors.end())
+    auto it = er->errors.begin();
+    if (it != er->errors.end())
     {
         strncpy(firstDomain, it->domain.c_str(), firstDomainLen - 1);
         firstDomain[firstDomainLen - 1] = '\0';
@@ -166,6 +225,44 @@ le_result_t ma_combainLocation_GetErrorResponse
         strncpy(firstMessage, it->message.c_str(), firstMessageLen - 1);
         firstMessage[firstMessageLen - 1] = '\0';
     }
+
+    ma_combainLocation_DestroyLocationRequest(handle);
+
+    return LE_OK;
+}
+
+
+le_result_t ma_combainLocation_GetParseFailureResult
+(
+    ma_combainLocation_LocReqHandleRef_t handle,
+    char *unparsedResponse,
+    size_t unparsedResponseLen
+)
+{
+    RequestRecord *requestRecord = GetRequestRecordFromHandle(handle, true);
+    if (!requestRecord)
+    {
+        return LE_BAD_PARAMETER;
+    }
+
+    auto r = requestRecord->result;
+    if (!r)
+    {
+        return LE_UNAVAILABLE;
+    }
+
+    if (r->getType() != MA_COMBAINLOCATION_RESULT_RESPONSE_PARSE_FAILURE)
+    {
+        return LE_UNAVAILABLE;
+    }
+
+    std::shared_ptr<CombainResponseParseFailure> rpf =
+        std::static_pointer_cast<CombainResponseParseFailure>(r);
+
+    strncpy(
+        unparsedResponse,
+        rpf->unparsed.c_str(),
+        std::min(rpf->unparsed.length() + 1, unparsedResponseLen + 1));
 
     return LE_OK;
 }
@@ -181,7 +278,12 @@ static void ClientSessionClosedHandler
     void* context
 )
 {
-    // TODO: iterate over Requests list matching clientSession
+    std::remove_if(
+        Requests.begin(),
+        Requests.end(),
+        [clientSession] (const RequestRecord& rec) {
+            return rec.clientSession == clientSession;
+        });
 }
 
 static ma_combainLocation_LocReqHandleRef_t GenerateHandle(void)
@@ -193,22 +295,139 @@ static ma_combainLocation_LocReqHandleRef_t GenerateHandle(void)
     return h;
 }
 
-static RequestRecord* GetRequestRecordFromHandle(ma_combainLocation_LocReqHandleRef_t handle)
+static RequestRecord* GetRequestRecordFromHandle(
+    ma_combainLocation_LocReqHandleRef_t handle, bool matchClientSession)
 {
     auto it = std::find_if(
         Requests.begin(),
         Requests.end(),
-        [handle] (const RequestRecord& r) -> bool {
+        [handle, matchClientSession] (const RequestRecord& r) -> bool {
             return (
-                r.handle == handle &&
-                r.clientSession == ma_combainLocation_GetClientSessionRef());
+                r.handle == handle && (
+                    !matchClientSession ||
+                    r.clientSession == ma_combainLocation_GetClientSessionRef()));
         });
     return (it == Requests.end()) ? NULL : &(*it);
 }
 
+static void HandleResponseAvailable(void *reportPayload)
+{
+    LE_DEBUG("In %s at line %d", __func__, __LINE__);
+    auto t = ResponseJson.dequeue();
+    LE_DEBUG("In %s at line %d", __func__, __LINE__);
+    ma_combainLocation_LocReqHandleRef_t handle = std::get<0>(t);
+    std::string responseJsonStr = std::get<1>(t);
+
+    RequestRecord *requestRecord = GetRequestRecordFromHandle(handle, false);
+    if (!requestRecord)
+    {
+        // Just do nothing the request no longer exists
+        LE_DEBUG("Received a response for an invalid handle");
+        return;
+    }
+
+    // There should never be a previous result
+    LE_ASSERT(!requestRecord->result);
+
+    // TODO: This is a bit gross that we're using an empty response to signal a communication
+    // failure. We may wish to be more expressive about why the communication failed.
+    if (responseJsonStr.empty())
+    {
+        LE_DEBUG("In %s at line %d", __func__, __LINE__);
+        requestRecord->result.reset(new CombainCommunicationFailure());
+    }
+    else
+    {
+        LE_DEBUG("In %s at line %d", __func__, __LINE__);
+        // try to parse the response as json
+        json_error_t loadError;
+        const size_t loadFlags = 0;
+        json_t *responseJson = json_loads(responseJsonStr.c_str(), loadFlags, &loadError);
+        if (responseJson == NULL)
+        {
+            LE_DEBUG("In %s at line %d", __func__, __LINE__);
+            requestRecord->result.reset(new CombainResponseParseFailure(responseJsonStr));
+        }
+        else if (!TryParseAsSuccess(responseJson, requestRecord->result) &&
+                 !TryParseAsError(responseJson, requestRecord->result))
+        {
+            LE_DEBUG("In %s at line %d", __func__, __LINE__);
+            requestRecord->result.reset(new CombainResponseParseFailure(responseJsonStr));
+        }
+
+        json_decref(responseJson);
+    }
+
+    LE_DEBUG("In %s at line %d", __func__, __LINE__);
+    requestRecord->responseHandler(
+        handle, requestRecord->result->getType(), requestRecord->responseHandlerContext);
+}
+
+static bool TryParseAsError(json_t *responseJson, std::shared_ptr<CombainResult>& result)
+{
+    const char *domain;
+    const char *reason;
+    const char *errorMessage;
+    int code;
+    const char *message;
+    const int errorUnpackRes = json_unpack(
+        responseJson,
+        "{s:{s:{s:s,s:s,s:s},s:i,s:s}}",
+        "error",
+        "errors",
+        "domain",
+        &domain,
+        "reason",
+        &reason,
+        "message",
+        &errorMessage,
+        "code",
+        &code,
+        "message",
+        &message);
+    const bool parseSuccess = (errorUnpackRes == 0);
+    if (parseSuccess)
+    {
+        result.reset(new CombainErrorResponse(code, message, {{domain, reason, errorMessage}}));
+    }
+
+    return parseSuccess;
+}
+
+static bool TryParseAsSuccess(json_t *responseJson, std::shared_ptr<CombainResult>& result)
+{
+    double latitude;
+    double longitude;
+    int accuracy;
+    const int successUnpackRes = json_unpack(
+        responseJson,
+        "{s:{s:F,s:F},s:i}",
+        "location",
+        "lat",
+        &latitude,
+        "lng",
+        &longitude,
+        "accuracy",
+        &accuracy);
+    const bool parseSuccess = (successUnpackRes == 0);
+    if (parseSuccess)
+    {
+        result.reset(new CombainSuccessResponse(latitude, longitude, accuracy));
+    }
+
+    return parseSuccess;
+}
+
 COMPONENT_INIT
 {
+    ResponseAvailableEvent = le_event_CreateId("CombainResponseAvailable", 0);
+    le_event_AddHandler(
+        "CombainResponseAvailableHandler", ResponseAvailableEvent, HandleResponseAvailable);
     // Register a handler to be notified when clients disconnect
     le_msg_AddServiceCloseHandler(
         ma_combainLocation_GetServiceRef(), ClientSessionClosedHandler, NULL);
+
+    CombainHttpInit();
+    le_thread_Ref_t httpThread = le_thread_Create("CombainHttp", CombainHttpThreadFunc, NULL);
+    le_thread_Start(httpThread);
 }
