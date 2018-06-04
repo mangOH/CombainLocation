@@ -96,7 +96,6 @@ le_result_t ma_combainLocation_SubmitLocationRequest
     void *context
 )
 {
-    LE_DEBUG("In %s at line %d", __func__, __LINE__ );
     RequestRecord *requestRecord = GetRequestRecordFromHandle(handle, true);
     if (!requestRecord)
     {
@@ -312,9 +311,7 @@ static RequestRecord* GetRequestRecordFromHandle(
 
 static void HandleResponseAvailable(void *reportPayload)
 {
-    LE_DEBUG("In %s at line %d", __func__, __LINE__);
     auto t = ResponseJson.dequeue();
-    LE_DEBUG("In %s at line %d", __func__, __LINE__);
     ma_combainLocation_LocReqHandleRef_t handle = std::get<0>(t);
     std::string responseJsonStr = std::get<1>(t);
 
@@ -322,7 +319,7 @@ static void HandleResponseAvailable(void *reportPayload)
     if (!requestRecord)
     {
         // Just do nothing the request no longer exists
-        LE_DEBUG("Received a response for an invalid handle");
+        LE_WARN("Received a response for an invalid handle");
         return;
     }
 
@@ -333,32 +330,27 @@ static void HandleResponseAvailable(void *reportPayload)
     // failure. We may wish to be more expressive about why the communication failed.
     if (responseJsonStr.empty())
     {
-        LE_DEBUG("In %s at line %d", __func__, __LINE__);
         requestRecord->result.reset(new CombainCommunicationFailure());
     }
     else
     {
-        LE_DEBUG("In %s at line %d", __func__, __LINE__);
         // try to parse the response as json
         json_error_t loadError;
         const size_t loadFlags = 0;
         json_t *responseJson = json_loads(responseJsonStr.c_str(), loadFlags, &loadError);
         if (responseJson == NULL)
         {
-            LE_DEBUG("In %s at line %d", __func__, __LINE__);
             requestRecord->result.reset(new CombainResponseParseFailure(responseJsonStr));
         }
         else if (!TryParseAsSuccess(responseJson, requestRecord->result) &&
                  !TryParseAsError(responseJson, requestRecord->result))
         {
-            LE_DEBUG("In %s at line %d", __func__, __LINE__);
             requestRecord->result.reset(new CombainResponseParseFailure(responseJsonStr));
         }
 
         json_decref(responseJson);
     }
 
-    LE_DEBUG("In %s at line %d", __func__, __LINE__);
     requestRecord->responseHandler(
         handle, requestRecord->result->getType(), requestRecord->responseHandlerContext);
 }
