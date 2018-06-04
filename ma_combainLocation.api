@@ -82,6 +82,9 @@ FUNCTION DestroyLocationRequest
 /**
  * Gets the response data from a successfully completed request. Note that the request is implicitly
  * destroyed by calling this function.
+ *
+ * @return LE_OK on success. If the result is not LE_OK, the content of the out parameters is
+ *         undefined.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetSuccessResponse
@@ -97,6 +100,9 @@ FUNCTION le_result_t GetSuccessResponse
 /**
  * Gets the response data from a request which failed to complete. Note that the request is
  * implicitly destroyed by calling this function.
+ *
+ * @return LE_OK on success. If the result is not LE_OK, the content of the out parameters is
+ *         undefined.
  */
 //--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetErrorResponse
@@ -109,6 +115,14 @@ FUNCTION le_result_t GetErrorResponse
     string message[128] OUT 
 );
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Gets the unparsed data from a parse failure result
+ *
+ * @return LE_OK on success. If the result is not LE_OK, the content of the out parameter is
+ *         undefined.
+ */
+//--------------------------------------------------------------------------------------------------
 FUNCTION le_result_t GetParseFailureResult
 (
     LocReqHandle handle IN,
