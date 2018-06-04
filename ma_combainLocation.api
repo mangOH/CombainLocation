@@ -29,6 +29,26 @@ FUNCTION le_result_t AppendWifiAccessPoint
     int16 signalStrength IN             ///< Signal strength in dB.  E.g. -62.
 );
 
+ENUM CellularTech
+{
+    CELL_TECH_GSM,
+    CELL_TECH_CDMA,
+    CELL_TECH_LTE,
+    CELL_TECH_WCDMA
+};
+
+FUNCTION le_result_t AppendCellTower
+(
+    LocReqHandle handle IN,            ///< Handle from CreateLocationRequest()
+    CellularTech cellularTechnology,
+    uint16 mcc,
+    uint16 mnc,                       ///< Use systemId, (sid) for CDMA
+    uint32 lac,                       ///< Network id for CDMA
+    uint32 cellId,                    ///< Basestation Id for CDMAj
+    int32 signalStrength              ///< Signal strength in dBm
+);
+
+
 //--------------------------------------------------------------------------------------------------
 /**
  * Result type that is passed to the callback when after submitting a request

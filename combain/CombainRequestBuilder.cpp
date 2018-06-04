@@ -5,6 +5,7 @@
 
 static std::string macAddrToString(const uint8_t *mac);
 static std::string ssidToString(const uint8_t *ssid, size_t ssidLen);
+static std::string cellularTechnologyToString(ma_combainLocation_CellularTech_t cellTech);
 
 WifiApScanItem::WifiApScanItem(
     const uint8_t *bssid,
@@ -38,6 +39,11 @@ void CombainRequestBuilder::appendWifiAccessPoint(const WifiApScanItem& ap)
     this->wifiAps.push_back(ap);
 }
 
+void CombainRequestBuilder::appendCellTower(const CellTowerScanItem& tower)
+{
+    this->cellTowers.push_back(tower);
+}
+
 std::string CombainRequestBuilder::generateRequestBody(void) const
 {
     json_t *body = json_object();
@@ -53,6 +59,21 @@ std::string CombainRequestBuilder::generateRequestBody(void) const
             json_array_append_new(wifiApsArray, jsonAp);
         }
         json_object_set_new(body, "wifiAccessPoints", wifiApsArray);
+    }
+
+    if (!this->cellTowers.empty())
+    {
+        json_t *cellTowersArray = json_array();
+        for (auto const& tower: this->cellTowers)
+        {
+            json_t *jsonTower = json_object();
+            json_object_set_new(jsonTower, "radioType", json_string(cellularTechnologyToString(tower.cellularTechnology).c_str()));
+            json_object_set_new(jsonTower, "mobileCountryCode", json_integer(tower.mcc));
+            json_object_set_new(jsonTower, "mobileNetworkCode", json_integer(tower.mnc));
+            json_object_set_new(jsonTower, "locationAccessCode", json_integer(tower.lac));
+            json_object_set_new(jsonTower, "cellId", json_integer(tower.cellId));
+        }
+        json_object_set_new(body, "cellTowers", cellTowersArray);
     }
 
     char* s = json_dumps(body, JSON_COMPACT);
@@ -83,4 +104,32 @@ static std::string ssidToString(const uint8_t *ssid, size_t ssidLen)
 {
     std::string s(reinterpret_cast<const char *>(ssid), ssidLen);
     return s;
+}
+
+static std::string cellularTechnologyToString(ma_combainLocation_CellularTech_t cellTech)
+{
+    switch (cellTech)
+    {
+    case MA_COMBAINLOCATION_CELL_TECH_GSM:
+        return "gsm";
+        break;
+
+    case MA_COMBAINLOCATION_CELL_TECH_CDMA:
+        return "cdma";
+        break;
+
+    case MA_COMBAINLOCATION_CELL_TECH_LTE:
+        return "lte";
+        break;
+
+    case MA_COMBAINLOCATION_CELL_TECH_WCDMA:
+        return "wcdma";
+        break;
+
+    default:
+        throw std::runtime_error("Invalid cellular technology");
+        break;
+    }
+
+    return "";
 }

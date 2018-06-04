@@ -205,6 +205,29 @@ static bool MacAddrStringToBinary(const char* s, uint8_t *b)
     return true;
 }
 
+static uint16_t MccMncStrToInt(const char *s)
+{
+    size_t offset = 0;
+    uint16_t out = 0;
+    int mult = 1;
+    while (s[offset] != '\0')
+    {
+        if (s[offset] >= '0' && s[offset] <= '9')
+        {
+            out += mult * (s[offset] - '0');
+        }
+        else
+        {
+            fprintf(stderr, "Bad MCC/MNC string '%s'", s);
+            exit(1);
+        }
+        mult *= 10;
+        offset++;
+    }
+
+    return out;
+}
+
 static void WifiEventHandler(le_wifiClient_Event_t event, void *context)
 {
     LE_INFO("Called WifiEventHanler() with event=%d", event);
@@ -301,6 +324,9 @@ COMPONENT_INIT
 
     State.combainHandle = ma_combainLocation_CreateLocationRequest();
 
+    State.waitingForWifiResults = CliArgs.useWifi;
+    State.waitingForCellularResults = CliArgs.useCellular;
+
     if (CliArgs.useWifi)
     {
         const le_result_t startRes = le_wifiClient_Start();
@@ -310,14 +336,130 @@ COMPONENT_INIT
             exit(1);
         }
         State.wifiHandler = le_wifiClient_AddNewEventHandler(WifiEventHandler, NULL);
-        State.waitingForWifiResults = true;
         le_wifiClient_Scan();
     }
 
     if (CliArgs.useCellular)
     {
-        // TODO
-        fprintf(stderr, "Not supported yet\n");
-        exit(1);
+        char mcc[LE_MRC_MCC_BYTES] = {0};
+        char mnc[LE_MRC_MNC_BYTES] = {0};
+        le_mrc_Rat_t rat;
+        uint32_t cid;
+    	uint32_t lac;
+        le_mrc_MetricsRef_t metricsRef;
+        int32_t rssi;
+        uint32_t ber;
+        uint32_t bler;
+        int32_t rsrq;
+        int32_t rsrp;
+        int32_t ecio;
+        int32_t rscp;
+        int32_t sinr;
+        int32_t io;
+        uint32_t er;
+        ma_combainLocation_CellularTech_t cellTech;
+
+        if (le_mrc_GetCurrentNetworkMccMnc(mcc, sizeof(mcc), mnc, sizeof(mnc)) != LE_OK)
+        {
+            fprintf(stderr, "Couldn't get cellular MCC, MNC");
+            exit(1);
+        }
+
+        if (le_mrc_GetRadioAccessTechInUse(&rat) != LE_OK)
+        {
+            fprintf(stderr, "Couldn't get cellular RAT");
+            exit(1);
+        }
+
+        cid = le_mrc_GetServingCellId();
+        if (cid == UINT32_MAX)
+        {
+            fprintf(stderr, "Couldn't get cellular cell Id");
+            exit(1);
+        }
+
+        lac = le_mrc_GetServingCellLocAreaCode();
+        if (lac == UINT32_MAX)
+        {
+            fprintf(stderr, "Couldn't get cellular location area code (LAC)");
+            exit(1);
+        }
+
+        metricsRef = le_mrc_MeasureSignalMetrics();
+        if (metricsRef == NULL)
+        {
+            fprintf(stderr, "Couldn't measure cellular signal metrics");
+            exit(1);
+        }
+
+        switch (rat)
+        {
+        case LE_MRC_RAT_UNKNOWN:
+            fprintf(stderr, "Unknown cellular RAT");
+            exit(1);
+            break;
+
+        case LE_MRC_RAT_GSM:
+            cellTech = MA_COMBAINLOCATION_CELL_TECH_GSM;
+            if (le_mrc_GetGsmSignalMetrics(metricsRef, &rssi, &ber) != LE_OK)
+            {
+                fprintf(stderr, "Couldn't get GSM RSSI");
+                exit(1);
+            }
+            break;
+
+        case LE_MRC_RAT_UMTS:
+            if (le_mrc_GetUmtsSignalMetrics(metricsRef, &rssi, &bler, &ecio, &rscp, &sinr) != LE_OK)
+            {
+                fprintf(stderr, "Couldn't get UMTS RSSI");
+                exit(1);
+            }
+            fprintf(stderr, "UMTS is not supported by combain");
+            exit(1);
+            break;
+
+        case LE_MRC_RAT_TDSCDMA:
+            fprintf(stderr, "It isn't possible to get the RSSI for TDSCDMA");
+            exit(1);
+            break;
+
+        case LE_MRC_RAT_LTE:
+            cellTech = MA_COMBAINLOCATION_CELL_TECH_LTE;
+            if (le_mrc_GetLteSignalMetrics(metricsRef, &rssi, &bler, &rsrq, &rsrp, &sinr) != LE_OK) 
+            {
+                fprintf(stderr, "Couldn't get LTE RSSI");
+                exit(1);
+            }
+            break;
+
+        case LE_MRC_RAT_CDMA:
+            cellTech = MA_COMBAINLOCATION_CELL_TECH_CDMA;
+            if (le_mrc_GetCdmaSignalMetrics(metricsRef, &rssi, &er, &ecio, &sinr, &io) != LE_OK) 
+            {
+                fprintf(stderr, "Couldn't get CDMA RSSI");
+                exit(1);
+            }
+            break;
+
+        default:
+            fprintf(stderr, "Unsupported cellular RAT (%d)", rat);
+            exit(1);
+            break;
+        }
+
+        if (ma_combainLocation_AppendCellTower(
+                State.combainHandle,
+                cellTech,
+                MccMncStrToInt(mcc),
+                MccMncStrToInt(mnc),
+                lac,
+                cid,
+                rssi) != LE_OK)
+        {
+            fprintf(stderr, "Failed to append WiFi scan results to combain request\n");
+            exit(1);
+        }
+
+        TrySubmitRequest();
     }
 }

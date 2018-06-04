@@ -89,6 +89,34 @@ le_result_t ma_combainLocation_AppendWifiAccessPoint
     return LE_OK;
 }
 
+le_result_t ma_combainLocation_AppendCellTower
+(
+    ma_combainLocation_LocReqHandleRef_t handle,
+    ma_combainLocation_CellularTech_t cellularTechnology,
+    uint16_t mcc,
+    uint16_t mnc,           ///< Use systemId, (sid) for CDMA
+    uint32_t lac,           ///< Network id for CDMA
+    uint32_t cellId,        ///< Basestation Id for CDMAj
+    int32_t signalStrength  ///< Signal strength in dBm
+)
+{
+    RequestRecord *requestRecord = GetRequestRecordFromHandle(handle, true);
+    if (!requestRecord)
+    {
+        return LE_BAD_PARAMETER;
+    }
+
+    if (!requestRecord->request)
+    {
+        // Request builder doesn't exist, must have already been submitted
+        return LE_BUSY;
+    }
+
+    // TODO
+
+    return LE_OK;
+}
+
 le_result_t ma_combainLocation_SubmitLocationRequest
 (
     ma_combainLocation_LocReqHandleRef_t handle,

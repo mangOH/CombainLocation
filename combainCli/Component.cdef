@@ -4,6 +4,7 @@ requires:
     {
         ${CURDIR}/../ma_combainLocation.api
         wifi/le_wifiClient.api 
+        modemServices/le_mrc.api
     }
 }
 
