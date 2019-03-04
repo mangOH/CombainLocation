@@ -447,7 +447,7 @@ COMPONENT_INIT
     le_msg_AddServiceCloseHandler(
         ma_combainLocation_GetServiceRef(), ClientSessionClosedHandler, NULL);
 
-    CombainHttpInit();
+    CombainHttpInit(&RequestJson, &ResponseJson, ResponseAvailableEvent);
     le_thread_Ref_t httpThread = le_thread_Create("CombainHttp", CombainHttpThreadFunc, NULL);
     le_thread_Start(httpThread);
 }

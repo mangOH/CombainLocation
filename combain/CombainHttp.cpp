@@ -1,8 +1,11 @@
 #include <curl/curl.h>
 #include "CombainHttp.h"
-#include "combainLocationApi.h"
 #include "legato.h"
 #include "interfaces.h"
+
+static ThreadSafeQueue<std::tuple<ma_combainLocation_LocReqHandleRef_t, std::string>> *RequestJson;
+static ThreadSafeQueue<std::tuple<ma_combainLocation_LocReqHandleRef_t, std::string>> *ResponseJson;
+static le_event_Id_t ResponseAvailableEvent;
 
 static struct ReceiveBuffer
 {
@@ -10,8 +13,14 @@ static struct ReceiveBuffer
     uint8_t data[1024];
 } HttpReceiveBuffer;
 
-void CombainHttpInit(void)
+void CombainHttpInit(
+    ThreadSafeQueue<std::tuple<ma_combainLocation_LocReqHandleRef_t, std::string>> *requestJson,
+    ThreadSafeQueue<std::tuple<ma_combainLocation_LocReqHandleRef_t, std::string>> *responseJson,
+    le_event_Id_t responseAvailableEvent)
 {
+    RequestJson = requestJson;
+    ResponseJson = responseJson;
+    ResponseAvailableEvent = responseAvailableEvent;
     CURLcode res = curl_global_init(CURL_GLOBAL_ALL);
     LE_ASSERT(res == 0);
 }
@@ -48,7 +57,7 @@ void *CombainHttpThreadFunc(void *context)
     char combainUrl[128] = "https://cps.combain.com?key=";
     strncat(combainUrl, combainApiKey, sizeof(combainUrl) - (1 + strlen(combainUrl)));
     do {
-        auto t = RequestJson.dequeue();
+        auto t = RequestJson->dequeue();
         ma_combainLocation_LocReqHandleRef_t handle = std::get<0>(t);
         std::string &requestBody = std::get<1>(t);
 
@@ -72,11 +81,11 @@ void *CombainHttpThreadFunc(void *context)
         {
             LE_ERROR("libcurl returned error (%d): %s", res, curl_easy_strerror(res));
             // TODO: better way to encode CURL errors?
-            ResponseJson.enqueue(std::make_tuple(handle, ""));
+            ResponseJson->enqueue(std::make_tuple(handle, ""));
         }
 
         std::string json((char*)HttpReceiveBuffer.data, HttpReceiveBuffer.used);
-        ResponseJson.enqueue(std::make_tuple(handle, json));
+        ResponseJson->enqueue(std::make_tuple(handle, json));
         le_event_Report(ResponseAvailableEvent, NULL, 0);
 
         curl_easy_cleanup(curl);
