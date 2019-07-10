@@ -13,7 +13,9 @@ REFERENCE LocReqHandle;
  * Creates a location request object in the service.
  */
 //--------------------------------------------------------------------------------------------------
-FUNCTION LocReqHandle CreateLocationRequest();
+FUNCTION LocReqHandle CreateLocationRequest
+(
+);
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -81,6 +83,7 @@ HANDLER LocationResultHandler
 FUNCTION le_result_t SubmitLocationRequest
 (
     LocReqHandle handle IN,              ///< Handle of the request to submit
+    string apiKey[32] IN,                ///< combain API key that will be used to send the request
     LocationResultHandler resultHandler  ///< Handler that will be called on completion of the
                                          ///< request if this function returns LE_OK
 );

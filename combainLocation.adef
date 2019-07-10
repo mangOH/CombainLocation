@@ -1,6 +1,5 @@
 sandboxed: true
 start: auto
-version: 1.0
 
 executables:
 {
@@ -25,12 +24,4 @@ processes:
 extern:
 {
     combainLocation.combain.ma_combainLocation
-}
-
-requires:
-{
-    configTree:
-    {
-        [r] .
-    }
 }

@@ -8,6 +8,7 @@ static struct
     bool helpRequested;
     bool useWifi;
     bool useCellular;
+    const char *combainApiKey;
 } CliArgs;
 
 static struct
@@ -22,7 +23,7 @@ static void Usage(FILE *stream)
 {
     fprintf(stream, "Usage: ");
     fprintf(stream, le_arg_GetProgramName());
-    fprintf(stream, "[-h|--help] [-w|--wifi] [-c|--cellular]\n");
+    fprintf(stream, "[-h|--help] [-k|--api-key <KEY>][-w|--wifi] [-c|--cellular]\n");
 }
 
 static void LocationResultHandler(
@@ -138,7 +139,7 @@ static bool TrySubmitRequest(void)
     {
         LE_INFO("Attempting to submit location request");
         const le_result_t res = ma_combainLocation_SubmitLocationRequest(
-            State.combainHandle, LocationResultHandler, NULL);
+            State.combainHandle, CliArgs.combainApiKey, LocationResultHandler, NULL);
         if (res != LE_OK)
         {
             fprintf(stderr, "Failed to submit location request\n");
@@ -307,12 +308,20 @@ COMPONENT_INIT
     le_arg_SetFlagVar(&CliArgs.helpRequested, "h", "help");
     le_arg_SetFlagVar(&CliArgs.useWifi, "w", "wifi");
     le_arg_SetFlagVar(&CliArgs.useCellular, "c", "cellular");
+    le_arg_SetStringVar(&CliArgs.combainApiKey, "k", "api-key");
     le_arg_Scan();
 
     if (CliArgs.helpRequested)
     {
         Usage(stdout);
         exit(0);
+    }
+
+    if (!CliArgs.combainApiKey)
+    {
+        fprintf(stderr, "Error: No Combain API key specified.  See --help\n");
+        Usage(stderr);
+        exit(1);
     }
 
     if (!CliArgs.useWifi && !CliArgs.useCellular)

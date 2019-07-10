@@ -27,7 +27,7 @@ struct RequestRecord
 // one or two active at a time.
 static std::list<RequestRecord> Requests;
 
-ThreadSafeQueue<std::tuple<ma_combainLocation_LocReqHandleRef_t, std::string>> RequestJson;
+ThreadSafeQueue<std::tuple<ma_combainLocation_LocReqHandleRef_t, std::string, std::string>> RequestJson;
 ThreadSafeQueue<std::tuple<ma_combainLocation_LocReqHandleRef_t, std::string>> ResponseJson;
 le_event_Id_t ResponseAvailableEvent;
 
@@ -120,6 +120,7 @@ le_result_t ma_combainLocation_AppendCellTower
 le_result_t ma_combainLocation_SubmitLocationRequest
 (
     ma_combainLocation_LocReqHandleRef_t handle,
+    const char *apiKey,
     ma_combainLocation_LocationResultHandlerFunc_t responseHandler,
     void *context
 )
@@ -148,7 +149,8 @@ le_result_t ma_combainLocation_SubmitLocationRequest
     requestRecord->responseHandlerContext = context;
     // NULL out the request generator since we're done with it
     requestRecord->request.reset();
-    RequestJson.enqueue(std::make_tuple(handle, requestBody));
+    std::string apiKeyString(apiKey);
+    RequestJson.enqueue(std::make_tuple(handle, apiKeyString, requestBody));
 
     return LE_OK;
 }

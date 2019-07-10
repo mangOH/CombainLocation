@@ -3,7 +3,7 @@
 #include "legato.h"
 #include "interfaces.h"
 
-static ThreadSafeQueue<std::tuple<ma_combainLocation_LocReqHandleRef_t, std::string>> *RequestJson;
+static ThreadSafeQueue<std::tuple<ma_combainLocation_LocReqHandleRef_t, std::string, std::string>> *RequestJson;
 static ThreadSafeQueue<std::tuple<ma_combainLocation_LocReqHandleRef_t, std::string>> *ResponseJson;
 static le_event_Id_t ResponseAvailableEvent;
 
@@ -14,7 +14,7 @@ static struct ReceiveBuffer
 } HttpReceiveBuffer;
 
 void CombainHttpInit(
-    ThreadSafeQueue<std::tuple<ma_combainLocation_LocReqHandleRef_t, std::string>> *requestJson,
+    ThreadSafeQueue<std::tuple<ma_combainLocation_LocReqHandleRef_t, std::string, std::string>> *requestJson,
     ThreadSafeQueue<std::tuple<ma_combainLocation_LocReqHandleRef_t, std::string>> *responseJson,
     le_event_Id_t responseAvailableEvent)
 {
@@ -46,20 +46,14 @@ static size_t WriteMemCallback(void *contents, size_t size, size_t nmemb, void *
 
 void *CombainHttpThreadFunc(void *context)
 {
-    le_cfg_ConnectService();
-    char combainApiKey[32];
-    const le_result_t cfgRes = le_cfg_QuickGetString(
-        "/ApiKey", combainApiKey, sizeof(combainApiKey) - 1, "");
-    LE_FATAL_IF(
-        cfgRes != LE_OK || combainApiKey[0] == '\0',
-        "Failed to read Combain API Key from config tree");
-
-    char combainUrl[128] = "https://cps.combain.com?key=";
-    strncat(combainUrl, combainApiKey, sizeof(combainUrl) - (1 + strlen(combainUrl)));
     do {
         auto t = RequestJson->dequeue();
         ma_combainLocation_LocReqHandleRef_t handle = std::get<0>(t);
-        std::string &requestBody = std::get<1>(t);
+        std::string &combainApiKey = std::get<1>(t);
+        std::string &requestBody = std::get<2>(t);
+
+        char combainUrl[128] = "https://cps.combain.com?key=";
+        strncat(combainUrl, combainApiKey.c_str(), sizeof(combainUrl) - (1 + strlen(combainUrl)));
 
         CURL* curl = curl_easy_init();
         LE_ASSERT(curl);
