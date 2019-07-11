@@ -34,7 +34,7 @@ requires:
 
     component:
     {
-        ${LEGATO_ROOT}/components/3rdParty/curl
+        curl
     }
 
     // Not necessary due to disabling of sandboxing
