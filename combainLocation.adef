@@ -1,4 +1,10 @@
-sandboxed: true
+/*
+ * Sandboxing disabled due to smack errors. I believe the errors relate to DNS resolution from
+ * libcurl. This is an example of a log message. Note that the message is truncated.
+ *
+ * Jul 11 08:50:33 swi-mdm9x28-wp user.notice kernel: [  158.994317] audit: type=1400 audit(1562860233.379:2): lsm=SMACK fn=smack_socket_sock_rcv_skb action=denied subject="app.combainLocation" object="_" requested=w pid=1672 comm="CombainHttp" saddr=127.0.0.1 src=38270 daddr=127.
+ */
+sandboxed: false
 start: auto
 
 executables:
