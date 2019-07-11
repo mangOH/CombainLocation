@@ -77,9 +77,11 @@ void *CombainHttpThreadFunc(void *context)
             // TODO: better way to encode CURL errors?
             ResponseJson->enqueue(std::make_tuple(handle, ""));
         }
-
-        std::string json((char*)HttpReceiveBuffer.data, HttpReceiveBuffer.used);
-        ResponseJson->enqueue(std::make_tuple(handle, json));
+        else
+        {
+            std::string json((char*)HttpReceiveBuffer.data, HttpReceiveBuffer.used);
+            ResponseJson->enqueue(std::make_tuple(handle, json));
+        }
         le_event_Report(ResponseAvailableEvent, NULL, 0);
 
         curl_easy_cleanup(curl);
